@@ -154,8 +154,7 @@ class DataElement(models.Model):
             ),
             models.CheckConstraint(
                 condition=(
-                    Q(pii_category__isnull=True)
-                    | Q(pii_category__in=PiiCategory.values)
+                    Q(pii_category__isnull=True) | Q(pii_category__in=PiiCategory.values)
                 ),
                 name="data_element_pii_category_valid",
                 violation_error_code="invalid_pii_category",
