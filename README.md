@@ -27,6 +27,17 @@ uv run pytest --cov=metadata_catalog      # with coverage
 uv run ruff check . && uv run ruff format --check .
 ```
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+| Step | Guards against |
+| --- | --- |
+| `uv sync --frozen` | A dependency change landing without its `uv.lock` entry |
+| `ruff check` / `ruff format --check` | Lint and formatting drift |
+| `manage.py makemigrations --check` | A model changed without a migration |
+| `pytest --cov` | Regressions |
+
 ---
 
 ## API
@@ -408,6 +419,7 @@ worth testing.
 ## Project layout
 
 ```
+.github/workflows/ci.yml    lint, migration drift check, tests
 config/                     settings, root URLconf
 metadata_catalog/
 ├── models/
