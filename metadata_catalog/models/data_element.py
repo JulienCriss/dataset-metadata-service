@@ -32,7 +32,7 @@ class PiiCategory(models.TextChoices):
     FINANCIAL = "FINANCIAL", "Financial"  # IBAN, balance, salary
     LOCATION = "LOCATION", "Location"  # geo, IP
     SENSITIVE = "SENSITIVE", "Sensitive"  # GDPR Art. 9 special category
-    OTHER = "OTHER", "Other"  # escape hatch
+    OTHER = "OTHER", "Other"
 
 
 class DataElement(models.Model):
@@ -101,8 +101,8 @@ class DataElement(models.Model):
         help_text="Whether this element holds personally identifiable information.",
     )
 
-    # DJ001 is suppressed deliberately: NULL is a meaningful third state here
-    # ("not applicable"), distinct from every valid category. An empty string
+    # NULL is a meaningful third state here ("not applicable"),
+    # distinct from every valid category. An empty string
     # would claim the element has a category that happens to be blank.
     pii_category = models.CharField(  # noqa: DJ001
         max_length=20,
@@ -136,6 +136,8 @@ class DataElement(models.Model):
         # Declared order first, then key as a deterministic tie-breaker so that
         # pagination is stable even if two elements share an ordinal.
         ordering = ["ordinal_position", "key"]
+
+        # Database-level rules
         constraints = [
             models.UniqueConstraint(
                 fields=["dataset", "key"],
@@ -145,7 +147,8 @@ class DataElement(models.Model):
                     "A data element with this key already exists in this dataset."
                 ),
             ),
-            # Validate the vocabulary at the database level.
+            # Validate the vocabulary.
+            # data_type & pii_category must be one of the values declared in vocabulary
             models.CheckConstraint(
                 condition=Q(data_type__in=DataType.values),
                 name="data_element_data_type_valid",
@@ -174,8 +177,9 @@ class DataElement(models.Model):
                     "empty when it is false."
                 ),
             ),
-            # A type parameter is only meaningful for the type that defines it,
+            # A type parameter it makes sense just for the type that defines it,
             # so each is required for its own type and forbidden for all others.
+            # E.g. UUID(320) & BOOLEAN(100) are meaningless
             models.CheckConstraint(
                 condition=(
                     Q(data_type=DataType.STRING, max_length__gte=1)
@@ -231,3 +235,14 @@ class DataElement(models.Model):
 
     def __str__(self) -> str:
         return f"{self.dataset.key}.{self.key}"
+
+    @property
+    def type_signature(self) -> str:
+        """
+        The logical type with its parameters, e.g. ``DECIMAL(18,2)``.
+        """
+        if self.data_type == DataType.STRING and self.max_length is not None:
+            return f"STRING({self.max_length})"
+        if self.data_type == DataType.DECIMAL and self.precision is not None:
+            return f"DECIMAL({self.precision},{self.scale})"
+        return self.data_type
