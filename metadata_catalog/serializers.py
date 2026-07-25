@@ -1,15 +1,35 @@
+from copy import copy
+
+from django.core.exceptions import NON_FIELD_ERRORS
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Max
 from rest_framework import serializers
+from rest_framework.settings import api_settings
 
 from metadata_catalog.models import DataElement, Dataset
 
 
+class CurrentDatasetDefault:
+    """The dataset comes from the URL, never from the request body."""
+
+    requires_context = True
+
+    def __call__(self, serializer_field):
+        return serializer_field.context["dataset"]
+
+
 class DataElementSerializer(serializers.ModelSerializer):
+    # Hidden rather than omitted: DRF silently skips the (dataset, key)
+    # uniqueness check if `dataset` is not a field on the serializer.
+    dataset = serializers.HiddenField(default=CurrentDatasetDefault())
     type_signature = serializers.CharField(read_only=True)
+    ordinal_position = serializers.IntegerField(required=False, min_value=1)
 
     class Meta:
         model = DataElement
         fields = [
             "id",
+            "dataset",
             "key",
             "name",
             "description",
@@ -26,100 +46,45 @@ class DataElementSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
-            "id",
-            "type_signature",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ["id", "type_signature", "created_at", "updated_at"]
 
     def validate(self, attrs):
-        instance = self.instance
+        """Validate against the model, so the rules are defined in one place."""
 
-        data_type = attrs.get(
-            "data_type",
-            getattr(instance, "data_type", None),
-        )
-        max_length = attrs.get(
-            "max_length",
-            getattr(instance, "max_length", None),
-        )
-        precision = attrs.get(
-            "precision",
-            getattr(instance, "precision", None),
-        )
-        scale = attrs.get(
-            "scale",
-            getattr(instance, "scale", None),
-        )
-        is_pii = attrs.get(
-            "is_pii",
-            getattr(instance, "is_pii", False),
-        )
-        pii_category = attrs.get(
-            "pii_category",
-            getattr(instance, "pii_category", None),
-        )
+        if self.instance is None and attrs.get("ordinal_position") is None:
+            attrs["ordinal_position"] = self.next_ordinal_position(attrs["dataset"])
 
-        errors = {}
+        # The element as it would look after this request, without saving it.
+        element = copy(self.instance) if self.instance else DataElement()
+        for field, value in attrs.items():
+            setattr(element, field, value)
 
-        if data_type == DataElement.DataType.STRING:
-            if max_length is None:
-                errors["max_length"] = "max_length is required for STRING data elements."
-
-            if precision is not None:
-                errors["precision"] = (
-                    "precision is only supported for DECIMAL data elements."
-                )
-
-            if scale is not None:
-                errors["scale"] = "scale is only supported for DECIMAL data elements."
-
-        elif data_type == DataElement.DataType.DECIMAL:
-            if precision is None:
-                errors["precision"] = "precision is required for DECIMAL data elements."
-
-            if scale is None:
-                errors["scale"] = "scale is required for DECIMAL data elements."
-
-            if precision is not None and scale is not None and scale > precision:
-                errors["scale"] = "scale cannot be greater than precision."
-
-            if max_length is not None:
-                errors["max_length"] = (
-                    "max_length is only supported for STRING data elements."
-                )
-
-        else:
-            if max_length is not None:
-                errors["max_length"] = (
-                    "max_length is only supported for STRING data elements."
-                )
-
-            if precision is not None:
-                errors["precision"] = (
-                    "precision is only supported for DECIMAL data elements."
-                )
-
-            if scale is not None:
-                errors["scale"] = "scale is only supported for DECIMAL data elements."
-
-        if is_pii and not pii_category:
-            errors["pii_category"] = "pii_category is required when is_pii is true."
-
-        if not is_pii and pii_category:
-            errors["pii_category"] = "pii_category must be empty when is_pii is false."
-
-        if errors:
-            raise serializers.ValidationError(errors)
+        try:
+            element.full_clean(validate_unique=False)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(self.as_drf_errors(exc)) from exc
 
         return attrs
 
+    @staticmethod
+    def as_drf_errors(exc: DjangoValidationError) -> dict:
+        """Model errors, with __all__ renamed to DRF's non_field_errors."""
+        errors = exc.message_dict
+        if NON_FIELD_ERRORS in errors:
+            errors[api_settings.NON_FIELD_ERRORS_KEY] = errors.pop(NON_FIELD_ERRORS)
+        return errors
 
-class DatasetSerializer(serializers.ModelSerializer):
-    data_element_count = serializers.IntegerField(
-        read_only=True,
-    )
+    @staticmethod
+    def next_ordinal_position(dataset: Dataset) -> int:
+        """Append after the dataset's current last element."""
+        highest = DataElement.objects.filter(dataset=dataset).aggregate(
+            highest=Max("ordinal_position")
+        )["highest"]
+        return (highest or 0) + 1
+
+
+class DatasetListSerializer(serializers.ModelSerializer):
+    data_element_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Dataset
@@ -133,35 +98,14 @@ class DatasetSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
-            "id",
-            "data_element_count",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ["id", "data_element_count", "created_at", "updated_at"]
 
 
-class DatasetDetailSerializer(serializers.ModelSerializer):
-    data_elements = DataElementSerializer(
-        many=True,
-        read_only=True,
-    )
+class DatasetDetailSerializer(DatasetListSerializer):
+    """Adds the dataset's elements. Needs prefetch_related in the view."""
 
-    class Meta:
-        model = Dataset
-        fields = [
-            "id",
-            "key",
-            "name",
-            "description",
-            "owner",
-            "created_at",
-            "updated_at",
-            "data_elements",
-        ]
-        read_only_fields = [
-            "id",
-            "created_at",
-            "updated_at",
-            "data_elements",
-        ]
+    data_elements = DataElementSerializer(many=True, read_only=True)
+
+    class Meta(DatasetListSerializer.Meta):
+        fields = [*DatasetListSerializer.Meta.fields, "data_elements"]
+        read_only_fields = [*DatasetListSerializer.Meta.read_only_fields, "data_elements"]
