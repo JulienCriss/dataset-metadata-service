@@ -182,7 +182,11 @@ class DataElement(models.Model):
             # E.g. UUID(320) & BOOLEAN(100) are meaningless
             models.CheckConstraint(
                 condition=(
-                    Q(data_type=DataType.STRING, max_length__gte=1)
+                    Q(
+                        data_type=DataType.STRING,
+                        max_length__isnull=False,
+                        max_length__gte=1,
+                    )
                     | (~Q(data_type=DataType.STRING) & Q(max_length__isnull=True))
                 ),
                 name="data_element_max_length_only_for_string",
@@ -196,6 +200,7 @@ class DataElement(models.Model):
                 condition=(
                     Q(
                         data_type=DataType.DECIMAL,
+                        precision__isnull=False,
                         precision__gte=1,
                         scale__isnull=False,
                     )
