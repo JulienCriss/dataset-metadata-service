@@ -4,6 +4,7 @@ from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 
+from .filters import DataElementFilterSet, DatasetFilterSet
 from .models import DataElement, Dataset
 from .serializers import (
     DataElementSerializer,
@@ -16,6 +17,8 @@ class DatasetListCreateView(generics.ListCreateAPIView):
     """List the datasets in the catalog, or register a new one."""
 
     serializer_class = DatasetListSerializer
+    filterset_class = DatasetFilterSet
+    ordering_fields = ["key", "name", "owner", "data_element_count", "created_at"]
 
     def get_queryset(self):
         return Dataset.objects.annotate(
@@ -63,6 +66,11 @@ class DatasetScopedElementMixin:
 
 class DataElementListCreateView(DatasetScopedElementMixin, generics.ListCreateAPIView):
     """List the data elements of a dataset, or add one to it."""
+
+    # Only on the list view: generics also run the filter backends inside
+    # get_object(), where query parameters have no business narrowing a lookup.
+    filterset_class = DataElementFilterSet
+    ordering_fields = ["ordinal_position", "key", "name", "data_type", "created_at"]
 
 
 class DataElementDetailView(
