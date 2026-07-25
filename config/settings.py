@@ -139,7 +139,6 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Post JSON by default in tests instead of multipart.
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
-    # TODO(step 4): "EXCEPTION_HANDLER": "metadata_catalog.exceptions.handler"
 }
 
 

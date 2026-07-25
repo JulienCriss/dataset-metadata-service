@@ -416,6 +416,40 @@ worth testing.
 
 ---
 
+## What I'd improve next
+
+Roughly in the order I'd pick them up.
+
+1. **Schema history.** The catalog only knows the current shape of a dataset.
+   "What did this look like at the end of last quarter" is a question people
+   actually ask, and today there is no answer. An append-only revision table,
+   written whenever an element changes, would cover it.
+
+2. **Audit trail and soft delete.** `updated_at` tells you something changed,
+   but not what or who. "Who removed the PII flag from this field, and when" is
+   a reasonable question in a regulated environment. This needs authentication
+   first, so the two go together.
+
+3. **Guard rails on deleting a dataset.** The cascade is right as a data model,
+   but a single unconfirmed `DELETE` wiping a dataset's whole schema definition
+   is too easy. It should refuse while elements exist, or soft delete instead.
+
+4. **PostgreSQL.** Gives a real regex `CHECK` for the key format, deferrable
+   constraints and partial indexes. Nothing in the model depends on SQLite.
+
+5. **A custom exception handler**, for a consistent error envelope and `409` on
+   conflicts rather than `400`.
+
+6. **Authentication**, with write access scoped to the owning data domain.
+
+7. **Lineage between elements** — recording that `customer.email` feeds
+   `marketing.contact`. This is where a metadata service starts being useful
+   rather than just a record of what exists.
+
+8. **Docker**, so there is no ambiguity about how to run it.
+
+---
+
 ## Project layout
 
 ```
