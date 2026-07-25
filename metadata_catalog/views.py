@@ -41,8 +41,8 @@ class DatasetDetailView(generics.RetrieveAPIView):
         )
 
 
-class DataElementListCreateView(generics.ListCreateAPIView):
-    """List the data elements of a dataset, or add one to it."""
+class DatasetScopedElementMixin:
+    """Restricts data elements to the dataset named in the URL."""
 
     serializer_class = DataElementSerializer
     queryset = DataElement.objects.none()
@@ -59,3 +59,15 @@ class DataElementListCreateView(generics.ListCreateAPIView):
         context = super().get_serializer_context()
         context["dataset"] = self.dataset
         return context
+
+
+class DataElementListCreateView(DatasetScopedElementMixin, generics.ListCreateAPIView):
+    """List the data elements of a dataset, or add one to it."""
+
+
+class DataElementDetailView(
+    DatasetScopedElementMixin, generics.RetrieveUpdateDestroyAPIView
+):
+    """Retrieve, update or delete a single data element."""
+
+    lookup_url_kwarg = "element_id"

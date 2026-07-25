@@ -22,4 +22,9 @@ urlpatterns = [
         views.DataElementListCreateView.as_view(),
         name="data-element-list",
     ),
+    path(
+        "datasets/<uuid:dataset_id>/elements/<uuid:element_id>/",
+        views.DataElementDetailView.as_view(),
+        name="data-element-detail",
+    ),
 ]
